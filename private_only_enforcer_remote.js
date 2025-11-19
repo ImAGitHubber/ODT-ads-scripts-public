@@ -82,7 +82,7 @@ function runPrivateOnlyEnforcer() {
     "WHERE CampaignId IN [" + campaignIdStrings.join(",") + "]",
     "  AND CampaignStatus = ENABLED",
     "  AND Clicks >= 1",
-    "  AND Date DURING YESTERDAY"
+    "DURING YESTERDAY"
   ].join(" ");
 
   Logger.log("Running search query report AWQL: " + awql);
@@ -282,4 +282,3 @@ function classifyIntent_(term, keepTokens, suspiciousTokens, brandAllowlist) {
     matchTokens: []
   };
 }
-
