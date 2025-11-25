@@ -16,13 +16,16 @@
  *   - keepTokens: high-end signals (e.g., "private", "vip", "luxury").
  *   - suspiciousTokens: terms that typically indicate group/low-end intent
  *     (e.g., "excursion", "group tour", "bus tour").
- * - For any search term that:
- *   - does NOT contain any keepTokens,
- *   - DOES contain at least one suspiciousToken, and
- *   - is not already an EXACT negative at campaign level,
- *   adds an EXACT negative keyword at the campaign level.
+ * - Mode (safety toggle):
+ *   - When mode = "audit_only" (default here), it classifies terms and logs
+ *     PLAN lines for would-be negatives but does not add any new negatives.
+ *   - When mode = "apply", it behaves as before: for any search term that:
+ *       - does NOT contain any keepTokens,
+ *       - DOES contain at least one suspiciousToken, and
+ *       - is not already an EXACT negative at campaign level,
+ *     it adds an EXACT negative keyword at the campaign level.
  * - Ignores "uncertain" terms so they can be reviewed separately.
- * - Prevents duplicates and caps new negatives per run.
+ * - Prevents duplicates and caps new negatives per run in "apply" mode.
  * - Logs a summary for review.
  *
  * NOTE:
@@ -32,6 +35,10 @@
 
 function runPrivateOnlyEnforcer() {
   var labelName = "ENFORCE_PRIVATE_TERM";
+  // Safety toggle:
+  // - "audit_only": classify and log PLAN lines only; do NOT add negatives.
+  // - "apply": add campaign-level EXACT negatives for block_candidate terms.
+  var mode = "audit_only";
   var maxNewNegativesPerRun = 5000;
 
   // Intent rules (generic, non-identifying)
@@ -59,7 +66,18 @@ function runPrivateOnlyEnforcer() {
   // Optional allowlist for branded terms (left empty by default).
   var brandAllowlist = [];
 
-  Logger.log("Private-Only Enforcer (remote) starting (label: " + labelName + ")");
+  Logger.log(
+    "Private-Only Enforcer (remote) starting (label: " +
+      labelName +
+      ", mode: " +
+      mode +
+      ")"
+  );
+  if (mode !== "apply") {
+    Logger.log(
+      "Running in audit_only mode; no new negative keywords will be created."
+    );
+  }
 
   var label = getOrCreateLabel_(labelName);
 
@@ -140,20 +158,30 @@ function runPrivateOnlyEnforcer() {
       continue;
     }
 
-    // Add an EXACT negative at campaign level.
-    campaign.createNegativeKeyword("[" + query + "]");
-    newNegativesCount++;
-    perCampaignCounts[campaignId].newNegatives++;
+    if (mode === "apply") {
+      // Add an EXACT negative at campaign level.
+      campaign.createNegativeKeyword("[" + query + "]");
+      newNegativesCount++;
+      perCampaignCounts[campaignId].newNegatives++;
 
-    // Track in-memory so we don't duplicate within this run.
-    existingForCampaign[termKey] = true;
-    existingNegatives[campaignId] = existingForCampaign;
+      // Track in-memory so we don't duplicate within this run.
+      existingForCampaign[termKey] = true;
+      existingNegatives[campaignId] = existingForCampaign;
+    }
   }
 
   // Summary logging.
   Logger.log("Private-Only Enforcer run summary (remote logic):");
   Logger.log("Total labeled campaigns: " + campaigns.length);
-  Logger.log("Total new negatives added: " + newNegativesCount + " (cap: " + maxNewNegativesPerRun + ")");
+  Logger.log(
+    "Total new negatives added: " +
+      newNegativesCount +
+      " (cap: " +
+      maxNewNegativesPerRun +
+      ", mode: " +
+      mode +
+      ")"
+  );
 
   for (var cid in perCampaignCounts) {
     if (!perCampaignCounts.hasOwnProperty(cid)) continue;
@@ -172,7 +200,7 @@ function runPrivateOnlyEnforcer() {
     Logger.log("Hit maxNewNegativesPerRun (" + maxNewNegativesPerRun + "); some candidates may be left for the next run.");
   }
 
-  Logger.log("Private-Only Enforcer (remote) finished.");
+  Logger.log("Private-Only Enforcer (remote) finished. mode=" + mode + ".");
 }
 
 // Helper functions. These are generic and contain no client-specific details.
